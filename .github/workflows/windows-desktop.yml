@@ -1,0 +1,45 @@
+name: MH Browser Windows Desktop (Manual Only)
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Desktop version (e.g. 0.1.0 or v0.1.0)'
+        required: true
+        default: '0.1.0'
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Normalize version
+        shell: pwsh
+        env:
+          RELEASE_INPUT: ${{ inputs.version }}
+        run: |
+          $version = $env:RELEASE_INPUT.Trim() -replace '^[vV]', ''
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Use version 0.1.0 or v0.1.0' }
+          "DESKTOP_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Publish Windows x64 portable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet restore desktop/MHBrowser.Desktop/MHBrowser.Desktop.csproj -r win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Restore failed' }
+          dotnet publish desktop/MHBrowser.Desktop/MHBrowser.Desktop.csproj -c Release -r win-x64 --no-restore --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -p:Version=$env:DESKTOP_VERSION -o dist/win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Publish failed' }
+          if (!(Test-Path dist/win-x64/MHBrowser.exe)) { throw 'MHBrowser.exe missing' }
+          Compress-Archive -Path dist/win-x64/* -DestinationPath "MH-Browser-Desktop-$env:DESKTOP_VERSION-win-x64-portable.zip"
+      - name: Publish Windows portable download artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MH-Browser-Desktop-win-x64
+          path: MH-Browser-Desktop-*-win-x64-portable.zip
+          if-no-files-found: error
+          retention-days: 30
